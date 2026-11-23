@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
@@ -12,6 +13,25 @@ import play_spike2 as play  # noqa: E402
 
 
 class PreparedLaunchTest(unittest.TestCase):
+    def test_raw_image_detection_prefers_a_unique_title_match(self):
+        with TemporaryDirectory() as folder:
+            folder = Path(folder)
+            image = folder / "godzilla_le-1_16_0_spike2.Release.8G.sdcard.RAW"
+            image.touch()
+            (folder / "godzilla_pro.sdcard.raw").touch()
+            self.assertEqual(play.card_in_folder(folder, "godzilla_le"), image)
+            (folder / "godzilla_le-1_14_0.sdcard.raw").touch()
+            with self.assertRaisesRegex(ValueError, "Multiple .raw images.*-Card"):
+                play.card_in_folder(folder, "godzilla_le")
+
+    def test_raw_image_detection_accepts_a_single_custom_filename(self):
+        with TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "video").mkdir()
+            image = folder / "custom build.raw"
+            image.touch()
+            self.assertEqual(play.card_in_folder(folder, "godzilla_le"), image)
+
     def test_prepared_run_skips_the_card_and_standalone_helpers(self):
         mod = play.padlaunch
         with patch.object(mod.padpath, "to_wsl", return_value="/rig") as to_wsl, \

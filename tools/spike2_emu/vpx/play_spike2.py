@@ -53,6 +53,20 @@ def check_controller():
         raise RuntimeError("PAD.Controller has no registered COM server.")
 
 
+def card_in_folder(folder, native_title):
+    images = [path for path in folder.iterdir() if path.suffix.lower() == ".raw" and path.is_file()]
+    title = native_title.lower()
+    matches = [path for path in images if path.stem.lower() == title
+               or path.name.lower().startswith((title + "-", title + "."))]
+    candidates = matches or images
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        names = ", ".join(sorted(path.name for path in candidates))
+        raise ValueError(f"Multiple .raw images in {folder}: {names}. Choose one with -Card.")
+    raise ValueError(f"No game executable or .raw image in {folder}. Pass a prepared SD image with -Card.")
+
+
 def wait_for_game(launch, timeout):
     deadline = time.monotonic() + timeout
     while launch.alive() and time.monotonic() < deadline:
@@ -91,7 +105,7 @@ def play(launch, exe, table, timeout):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--game-dir", help="Executable Stern title directory, in Windows or WSL")
+    source.add_argument("--game-dir", help="Executable title directory, or Windows folder containing a .raw image")
     source.add_argument("--card", type=Path, help="Prepared SPIKE 2 card image")
     parser.add_argument("--table", type=Path, required=True, help="PAD-patched .vpx file")
     parser.add_argument("--vpx-exe", type=Path, help="Override the installed VPX player")
@@ -117,18 +131,22 @@ def main():
         check_controller()
 
         distro = args.distro or padlaunch.distro()
-        card = None
+        card = args.card
         game_dir = args.game_dir
-        if args.card:
-            card = args.card.resolve(strict=True)
+        if game_dir and not game_dir.startswith("/"):
+            folder = Path(game_dir).resolve(strict=True)
+            if not folder.is_dir():
+                raise ValueError("-GameDir requires a directory. Pass an image file with -Card.")
+            if (folder / "game").is_file():
+                game_dir = padlaunch.padpath.to_wsl(str(folder), distro)
+            else:
+                card = card_in_folder(folder, native_title)
+                game_dir = None
+        if card:
+            card = card.resolve(strict=True)
             if not card.is_file():
                 raise ValueError("-Card requires a prepared SPIKE 2 image file.")
         else:
-            if not game_dir.startswith("/"):
-                folder = Path(game_dir).resolve(strict=True)
-                if not (folder / "game").is_file():
-                    raise ValueError(f"No game executable in {folder}. Pass the prepared SD image with -Card.")
-                game_dir = padlaunch.padpath.to_wsl(str(folder), distro)
             game_dir = game_dir.rstrip("/")
             probe = subprocess.run(padlaunch.wsl_head(distro) + ["-e", "test", "-x", game_dir + "/game"],
                                    capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)

@@ -153,7 +153,9 @@ Use `Play-Spike2Vpx.ps1` with a prepared SPIKE 2 SD image or an extracted game
 directory and a matching PAD-patched VPX table. The launcher uses an existing
 WSL/WSLg emulator runtime and `PAD.Controller` registration. Pass the image
 with `-Card`. Pass a Windows or WSL directory containing the actual `game`
-executable with `-GameDir`. The directory can have any name.
+executable with `-GameDir`. If a Windows folder has no `game` executable,
+`-GameDir` looks for a `.raw` image there, preferring a unique match for the
+table's native title. Use `-Card` to choose between multiple candidates.
 
 ```powershell
 .\Play-Spike2Vpx.ps1 -GameDir '/home/pad/games/godzilla_le' `
@@ -169,7 +171,8 @@ the launcher prefers Python bundled with PAD and then Python on `PATH`.
 
 The launcher starts Stern's LCD and audio and opens the patched table once
 the game can accept the bridge. It skips the virtual playfield, ball feeder,
-topper, and replay recording. `-GameDir` also skips the card mount and cache.
-VPX owns the trough and playfield. The controller uses the pushed `padlink` transport
+topper, and replay recording. Launching a `game` executable directly also
+skips the card mount and cache. VPX owns the trough and playfield. The
+controller uses the pushed `padlink` transport
 by default. Close VPX to shut down the emulator and release its rig slot.
 Startup failures report the runtime log path when available.
