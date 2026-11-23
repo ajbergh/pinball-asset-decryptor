@@ -147,3 +147,27 @@ shows it on first launch.
 
 [MIT](LICENSE). Each upstream decryptor's reverse-engineering work is
 credited in its source project; this is the unification layer.
+## SPIKE 2 with VPX
+
+Use `Play-Spike2Vpx.ps1` when the SPIKE 2 game has already been extracted and
+the matching VPX table has already been patched for PAD. The launcher uses
+an existing WSL/WSLg emulator runtime and an existing `PAD.Controller`
+registration. The game directory must contain the executable `game` and
+be named for the native Stern title in the table's PAD map, such as
+`godzilla_le`. The directory can be a Windows path or a WSL path.
+
+```powershell
+.\Play-Spike2Vpx.ps1 -GameDir '/home/pad/games/godzilla_le' `
+    -Table 'D:\Visual Pinball\Tables\Godzilla (PAD).vpx'
+```
+
+Use `-VpxExe` or `-Distro` to override the existing kit settings. `-Python`
+selects a different Windows Python with `olefile` installed. Without it,
+the launcher prefers Python bundled with PAD and then Python on `PATH`.
+
+The launcher starts Stern's LCD and audio and opens the patched table once
+the game can accept the bridge. It skips the card mount and cache, virtual
+playfield, ball feeder, topper, and replay recording. VPX owns the trough
+and playfield. The controller uses the existing pushed `padlink` transport
+by default. Close VPX to shut down the emulator and release its rig slot.
+Startup failures report the runtime log path when available.

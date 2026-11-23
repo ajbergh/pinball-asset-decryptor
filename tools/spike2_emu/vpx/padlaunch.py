@@ -572,9 +572,11 @@ def _text(b):
 class Launch:
     """One run started for a table: a slot, a watch.sh, and the stop for it."""
 
-    def __init__(self, title, card, dist=None, minutes=240):
+    def __init__(self, title, card, dist=None, minutes=240, *, game_dir=None):
         self.title = game_for(title)
         self.card = card
+        self.game_dir = game_dir
+        self.label = "%s-%d" % (LABEL, os.getpid()) if game_dir else LABEL
         self.distro = dist if dist is not None else distro()
         self.minutes = minutes
         self.slot = None
@@ -662,12 +664,12 @@ class Launch:
         """A slot of the kit's own: the kit's `slot` when it names one (`use`
         keeps it if it is already PAD-VPX's, takes it if free), else the first
         free one."""
-        want = kit_load().get("slot")
+        want = None if self.game_dir else kit_load().get("slot")
         what = "%s for Visual Pinball" % self.title
         if want:
-            cmd = self.rig_head() + ["use", str(int(want)), LABEL, what]
+            cmd = self.rig_head() + ["use", str(int(want)), self.label, what]
         else:
-            cmd = self.rig_head() + ["take", "--any", LABEL, what]
+            cmd = self.rig_head() + ["take", "--any", self.label, what]
         r = _run(cmd)
         out = _text(r.stdout) + _text(r.stderr)
         m = re.search(r"slot=(\d+)", out)
@@ -677,7 +679,7 @@ class Launch:
         if want and not m:
             # the kit's slot is somebody else's now: any free one, then
             log("slot %s is not ours (%s); taking any" % (want, out.strip()[-120:]))
-            r = _run(self.rig_head() + ["take", "--any", LABEL, what])
+            r = _run(self.rig_head() + ["take", "--any", self.label, what])
             out = _text(r.stdout) + _text(r.stderr)
             m = re.search(r"slot=(\d+)", out)
         if not m:
@@ -685,17 +687,25 @@ class Launch:
             # above them only what it saw
             raise RuntimeError("no rig slot free for %s: %s" % (self.title, out.strip()[-300:]))
         self.slot = int(m.group(1))
+        if self.game_dir and r.returncode:
+            raise RuntimeError("could not prepare rig slot %d: %s" % (self.slot, out.strip()[-300:]))
         return self.slot
 
     def env(self):
+        env = self.board_env() + ["PAD_SLOT=%d" % self.slot, "PAD_LABEL=%s" % self.label,
+                                  "PAD_HIDDEN=0", "PAD_AUDIO=1"]
+        if self.game_dir:
+            return env + ["PAD_GAME_DIR=" + self.game_dir, "PAD_CARD=", "PAD_SELECT=0",
+                          "PAD_PLAYFIELD=0", "PAD_TOPPER=0", "PAD_BALL_FEED=0",
+                          "PAD_AUTO_ATTRACT=0", "PAD_RECORD=0", "PAD_PIVOT=",
+                          "PAD_SAVESTATES=0"]
         card = padpath.to_wsl(self.card, self.distro)
         # visible (the LCD window) and audible, but NO virtual playfield
         # window: Visual Pinball is the playfield, and the rig's own would
         # take the keyboard from it the moment it opened
         # ... unless the kit asked for the playfield window (padvpx playfield)
         playfield = "1" if kit_load().get("playfield") else "0"
-        env = self.board_env() + ["PAD_SLOT=%d" % self.slot, "PAD_LABEL=%s" % LABEL,
-               "PAD_HIDDEN=0", "PAD_PLAYFIELD=%s" % playfield, "PAD_AUDIO=1", "PAD_CARD=%s" % card]
+        env += ["PAD_PLAYFIELD=%s" % playfield, "PAD_CARD=%s" % card]
         env += self.cache_env()
         py = win_python()
         if py:
@@ -735,6 +745,9 @@ class Launch:
                          timeout=60).returncode == 1:
             log("no rig at %s" % base)
             raise RuntimeError(NO_RIG)
+        if self.game_dir:
+            self._start_watch()
+            return self.slot
         card_store(self.distro)
         # PAD-964: what the card costs the disk, said in the run's log before
         # anything is copied - the loading window shows it, and a start with
@@ -746,16 +759,19 @@ class Launch:
             state, words = space_words(self.check)
             self.note("[card-check] %s: %s" % (state, words))
             log("card check for %s: %s: %s" % (self.title, state, words))
-        if self.slot is None:
-            self.take_slot()
-        head, self.as_root = self.head()
-        cmd = head + self.env() + ["bash", "%s/watch.sh" % self.rig_wsl, str(self.minutes)]
-        out = open(self.logfile, "ab")
-        self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
-                                     creationflags=_CREATE_NO_WINDOW)
+        self._start_watch()
         log("started %s on slot %d from %s (distro %s, log %s)"
             % (self.title, self.slot, self.card, self.distro or "default", self.logfile))
         return self.slot
+
+    def _start_watch(self):
+        head, self.as_root = self.head()
+        if self.slot is None:
+            self.take_slot()
+        cmd = head + self.env() + ["bash", "%s/watch.sh" % self.rig_wsl, str(self.minutes)]
+        with open(self.logfile, "ab") as out:
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
+                                         creationflags=_CREATE_NO_WINDOW)
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
@@ -765,9 +781,9 @@ class Launch:
             return
         try:
             head, _ = self.head() if getattr(self, "as_root", False) else (wsl_head(self.distro) + ["-e", "env"], False)
-            _run(head + self.board_env() + ["PAD_SLOT=%d" % self.slot, "PAD_LABEL=%s" % LABEL,
+            _run(head + self.board_env() + ["PAD_SLOT=%d" % self.slot, "PAD_LABEL=%s" % self.label,
                                             "bash", "%s/killgame.sh" % self.rig_wsl], timeout=120)
-            _run(self.rig_head() + ["release", str(self.slot), LABEL], timeout=30)
+            _run(self.rig_head() + ["release", str(self.slot), self.label], timeout=30)
             log("stopped %s on slot %d" % (self.title, self.slot))
         except Exception as exc:                            # noqa: BLE001
             log("stop of slot %d failed: %s" % (self.slot, exc))

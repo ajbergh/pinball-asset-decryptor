@@ -511,6 +511,14 @@ GAMENAME_RES = (re.compile(r'^\s*Controller\.GameName\s*=\s*"([^"]+)"', re.M),
                 re.compile(r'^\s*Const\s+cGameName\s*=\s*"([^"]+)"', re.M | re.I))
 
 
+def script_title(text):
+    for rx in GAMENAME_RES:
+        match = rx.search(text)
+        if match:
+            return match.group(1)
+    return ""
+
+
 def patched_title(tables_dir, out_name):
     """The title a (PAD) table was patched for, from the script every patcher
     writes beside it (`<name>.script.vbs`): an earlier patch may be for another
@@ -522,11 +530,7 @@ def patched_title(tables_dir, out_name):
                     encoding="utf-8", errors="replace").read()
     except OSError:
         return ""
-    for rx in GAMENAME_RES:
-        m = rx.search(text)
-        if m:
-            return m.group(1)
-    return ""
+    return script_title(text)
 
 
 #: marks of fixes the patcher makes on EVERY table, in a map's `repatch`
