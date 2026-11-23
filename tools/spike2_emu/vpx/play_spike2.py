@@ -90,7 +90,9 @@ def play(launch, exe, table, timeout):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--game-dir", required=True, help="Extracted Stern title directory, in Windows or WSL")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--game-dir", help="Executable Stern title directory, in Windows or WSL")
+    source.add_argument("--card", type=Path, help="Prepared SPIKE 2 card image")
     parser.add_argument("--table", type=Path, required=True, help="PAD-patched .vpx file")
     parser.add_argument("--vpx-exe", type=Path, help="Override the installed VPX player")
     parser.add_argument("--distro", help="Override the prepared WSL distribution")
@@ -109,22 +111,32 @@ def main():
         if not mapping or mapping.get("platform", "spike2") != "spike2":
             raise ValueError(f"No SPIKE 2 map was found for {title}.")
         native_title = padlaunch.game_for(title)
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", native_title):
+            raise ValueError(f"Invalid native SPIKE 2 game name in the map for {title}.")
         exe = resolve_vpx(args.vpx_exe)
         check_controller()
 
         distro = args.distro or padlaunch.distro()
+        card = None
         game_dir = args.game_dir
-        if not game_dir.startswith("/"):
-            game_dir = padlaunch.padpath.to_wsl(str(Path(game_dir).resolve(strict=True)), distro)
-        game_dir = game_dir.rstrip("/")
-        if game_dir.rsplit("/", 1)[-1] != native_title:
-            raise ValueError(f"The extracted game directory must be named {native_title}.")
-        probe = subprocess.run(padlaunch.wsl_head(distro) + ["-e", "test", "-x", game_dir + "/game"],
-                               capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
-        if probe.returncode:
-            detail = padlaunch._text(probe.stderr).strip()
-            raise RuntimeError(f"WSL could not access an executable at {game_dir}/game. {detail}".strip())
-        launch = padlaunch.Launch(title, None, dist=distro, minutes=0, game_dir=game_dir)
+        if args.card:
+            card = args.card.resolve(strict=True)
+            if not card.is_file():
+                raise ValueError("-Card requires a prepared SPIKE 2 image file.")
+        else:
+            if not game_dir.startswith("/"):
+                folder = Path(game_dir).resolve(strict=True)
+                if not (folder / "game").is_file():
+                    raise ValueError(f"No game executable in {folder}. Pass the prepared SD image with -Card.")
+                game_dir = padlaunch.padpath.to_wsl(str(folder), distro)
+            game_dir = game_dir.rstrip("/")
+            probe = subprocess.run(padlaunch.wsl_head(distro) + ["-e", "test", "-x", game_dir + "/game"],
+                                   capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+            if probe.returncode:
+                detail = padlaunch._text(probe.stderr).strip()
+                raise RuntimeError(f"WSL could not access an executable at {game_dir}/game. {detail}".strip())
+        launch = padlaunch.Launch(title, str(card) if card else None, dist=distro, minutes=0,
+                                  game_dir=game_dir, prepared=True)
         return play(launch, exe, table, args.startup_timeout)
     except KeyboardInterrupt:
         return 130

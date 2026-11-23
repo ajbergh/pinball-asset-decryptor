@@ -1,7 +1,8 @@
-# Launch an extracted SPIKE 2 title and its PAD-patched Visual Pinball table.
-[CmdletBinding()]
+# Launch a prepared SPIKE 2 title and its PAD-patched Visual Pinball table.
+[CmdletBinding(DefaultParameterSetName = 'GameDir')]
 param(
-    [Parameter(Mandatory = $true)][string]$GameDir,
+    [Parameter(Mandatory = $true, ParameterSetName = 'GameDir')][string]$GameDir,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Card')][string]$Card,
     [Parameter(Mandatory = $true)][string]$Table,
     [string]$VpxExe,
     [string]$Distro,
@@ -15,7 +16,9 @@ if (-not $Python) {
     $Python = if (Test-Path -LiteralPath $bundledPython -PathType Leaf) { $bundledPython } else { 'python.exe' }
 }
 $launcher = Join-Path $PSScriptRoot 'tools/spike2_emu/vpx/play_spike2.py'
-$launchArgs = @('--game-dir', $GameDir, '--table', $Table, '--startup-timeout', $StartupTimeout)
+$launchArgs = @('--table', $Table, '--startup-timeout', $StartupTimeout)
+if ($Card) { $launchArgs += @('--card', $Card) }
+else { $launchArgs += @('--game-dir', $GameDir) }
 if ($VpxExe) { $launchArgs += @('--vpx-exe', $VpxExe) }
 if ($Distro) { $launchArgs += @('--distro', $Distro) }
 

@@ -572,11 +572,12 @@ def _text(b):
 class Launch:
     """One run started for a table: a slot, a watch.sh, and the stop for it."""
 
-    def __init__(self, title, card, dist=None, minutes=240, *, game_dir=None):
+    def __init__(self, title, card, dist=None, minutes=240, *, game_dir=None, prepared=False):
         self.title = game_for(title)
         self.card = card
         self.game_dir = game_dir
-        self.label = "%s-%d" % (LABEL, os.getpid()) if game_dir else LABEL
+        self.prepared = prepared or bool(game_dir)
+        self.label = "%s-%d" % (LABEL, os.getpid()) if self.prepared else LABEL
         self.distro = dist if dist is not None else distro()
         self.minutes = minutes
         self.slot = None
@@ -584,7 +585,8 @@ class Launch:
         self.as_root = False
         # every path below is for THIS run's distro, so that distro converts
         # it, not the machine's default (PAD-882)
-        self.rig_wsl = padpath.to_wsl(rig_dir(), self.distro)
+        # Prepared launches need this kit's support for an explicit directory title.
+        self.rig_wsl = padpath.to_wsl(RIG if game_dir else rig_dir(), self.distro)
         self.logfile = os.path.join(os.path.dirname(LOG), "padvpx-%s.log" % title)
         self.home = None        # app_home(), asked once
         self.check = None       # cache_check(): what the card costs the disk (PAD-964)
@@ -664,7 +666,7 @@ class Launch:
         """A slot of the kit's own: the kit's `slot` when it names one (`use`
         keeps it if it is already PAD-VPX's, takes it if free), else the first
         free one."""
-        want = None if self.game_dir else kit_load().get("slot")
+        want = None if self.prepared else kit_load().get("slot")
         what = "%s for Visual Pinball" % self.title
         if want:
             cmd = self.rig_head() + ["use", str(int(want)), self.label, what]
@@ -687,25 +689,28 @@ class Launch:
             # above them only what it saw
             raise RuntimeError("no rig slot free for %s: %s" % (self.title, out.strip()[-300:]))
         self.slot = int(m.group(1))
-        if self.game_dir and r.returncode:
+        if self.prepared and r.returncode:
             raise RuntimeError("could not prepare rig slot %d: %s" % (self.slot, out.strip()[-300:]))
         return self.slot
 
     def env(self):
         env = self.board_env() + ["PAD_SLOT=%d" % self.slot, "PAD_LABEL=%s" % self.label,
                                   "PAD_HIDDEN=0", "PAD_AUDIO=1"]
-        if self.game_dir:
-            return env + ["PAD_GAME_DIR=" + self.game_dir, "PAD_CARD=", "PAD_SELECT=0",
-                          "PAD_PLAYFIELD=0", "PAD_TOPPER=0", "PAD_BALL_FEED=0",
-                          "PAD_AUTO_ATTRACT=0", "PAD_RECORD=0", "PAD_PIVOT=",
-                          "PAD_SAVESTATES=0"]
+        if self.prepared:
+            env += ["PAD_SELECT=0", "PAD_PLAYFIELD=0", "PAD_TOPPER=0", "PAD_BALL_FEED=0",
+                    "PAD_AUTO_ATTRACT=0", "PAD_RECORD=0", "PAD_PIVOT=", "PAD_SAVESTATES=0"]
+            if self.game_dir:
+                return env + ["PAD_GAME_DIR=" + self.game_dir, "PAD_GAME_DIR_TITLE=" + self.title,
+                              "PAD_CARD="]
         card = padpath.to_wsl(self.card, self.distro)
         # visible (the LCD window) and audible, but NO virtual playfield
         # window: Visual Pinball is the playfield, and the rig's own would
         # take the keyboard from it the moment it opened
         # ... unless the kit asked for the playfield window (padvpx playfield)
-        playfield = "1" if kit_load().get("playfield") else "0"
-        env += ["PAD_PLAYFIELD=%s" % playfield, "PAD_CARD=%s" % card]
+        if not self.prepared:
+            playfield = "1" if kit_load().get("playfield") else "0"
+            env.append("PAD_PLAYFIELD=%s" % playfield)
+        env.append("PAD_CARD=%s" % card)
         env += self.cache_env()
         py = win_python()
         if py:

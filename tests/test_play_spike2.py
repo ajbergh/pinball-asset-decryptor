@@ -14,25 +14,51 @@ import play_spike2 as play  # noqa: E402
 class PreparedLaunchTest(unittest.TestCase):
     def test_prepared_run_skips_the_card_and_standalone_helpers(self):
         mod = play.padlaunch
-        with patch.object(mod.padpath, "to_wsl", return_value="/rig"), \
+        with patch.object(mod.padpath, "to_wsl", return_value="/rig") as to_wsl, \
                 patch.object(mod, "no_linux", return_value=""), \
                 patch.object(mod, "card_store") as card_store, \
                 patch.object(mod.Launch, "base_rig", return_value=""), \
                 patch.object(mod.Launch, "_start_watch") as watch:
             launch = mod.Launch("godzilla_le", None, dist="PAD-Runtime", minutes=0,
-                                game_dir="/home/pad games/godzilla_le")
+                                game_dir="/mnt/d/temp/stern firmware/godzilla")
             launch.slot = 2
             launch.board_env = Mock(return_value=[])
             launch.start()
 
         watch.assert_called_once_with()
         card_store.assert_not_called()
+        to_wsl.assert_called_once_with(mod.RIG, "PAD-Runtime")
         env = dict(value.split("=", 1) for value in launch.env())
-        self.assertEqual(env["PAD_GAME_DIR"], "/home/pad games/godzilla_le")
+        self.assertEqual(env["PAD_GAME_DIR"], "/mnt/d/temp/stern firmware/godzilla")
+        self.assertEqual(env["PAD_GAME_DIR_TITLE"], "godzilla_le")
         self.assertEqual(env["PAD_AUDIO"], "1")
         for name in ("PLAYFIELD", "HIDDEN", "BALL_FEED", "TOPPER", "RECORD"):
             self.assertEqual(env["PAD_" + name], "0")
         self.assertEqual(env["PAD_CARD"], "")
+
+    def test_prepared_card_uses_card_mount_without_the_virtual_playfield(self):
+        mod = play.padlaunch
+        image = "/mnt/d/temp/stern firmware/godzilla/godzilla_le.sdcard.raw"
+        with patch.object(mod.padpath, "to_wsl", side_effect=lambda path, _: path), \
+                patch.object(mod, "no_linux", return_value=""), \
+                patch.object(mod, "card_store") as card_store, \
+                patch.object(mod, "win_python", return_value=None), \
+                patch.object(mod, "log"), \
+                patch.object(mod.Launch, "base_rig", return_value=""), \
+                patch.object(mod.Launch, "_start_watch") as watch:
+            launch = mod.Launch("godzilla_le", image, dist="PAD-Runtime", minutes=0, prepared=True)
+            launch.slot = 2
+            launch.board_env = Mock(return_value=[])
+            launch.cache_check = Mock(return_value=None)
+            launch.cache_env = Mock(return_value=[])
+            launch.start()
+            env = dict(value.split("=", 1) for value in launch.env())
+
+        card_store.assert_called_once_with("PAD-Runtime")
+        watch.assert_called_once_with()
+        self.assertEqual(env["PAD_CARD"], image)
+        self.assertEqual(env["PAD_PLAYFIELD"], "0")
+        self.assertEqual(env["PAD_SELECT"], "0")
 
     def test_vpx_starts_after_the_game_and_exit_releases_the_run(self):
         calls = []

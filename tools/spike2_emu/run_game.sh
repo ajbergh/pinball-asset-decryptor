@@ -26,7 +26,8 @@ S=$RIG
 # PAD_GAME_DIR runs a title from a directory ANYWHERE - an extraction that was
 # never put under games/, a working copy, a network share. Same bind mount, one
 # fewer step. Both take a title that is not in the rootfs and put it there for
-# the length of the run without copying it.
+# the length of the run without copying it. PAD_GAME_DIR_TITLE can name the
+# native title independently of the source directory's name.
 # ★ PAD-1279: A PAD TEST CARD'S MENU IS THE CARD'S OWN, AS IT IS. There are no
 # games trees to resolve and none to boot: the selector reads testcard=on and
 # stays in its TEST CARD menu, showing the files under test_dir=/games/testcard -
@@ -429,7 +430,7 @@ elif [ -n "${PAD_GAME_DIR:-}" ]; then
     CARD_SRC=${PAD_GAME_DIR%/}
     [ -x "$CARD_SRC/game" ] || {
         echo "[run] $CARD_SRC holds no game ELF" >&2; exit 1; }
-    GAME=$(basename "$CARD_SRC")
+    GAME=${PAD_GAME_DIR_TITLE:-$(basename "$CARD_SRC")}
     mkdir -p "$R/games/$GAME"
     echo "[run] title: $GAME (from $CARD_SRC)"
 fi

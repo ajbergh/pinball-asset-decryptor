@@ -511,7 +511,7 @@ if [ -n "${PAD_CARD:-}" ]; then
     fi
 elif [ -n "${PAD_GAME_DIR:-}" ]; then
     # A title directory anywhere on disk, bind mounted the same way.
-    GAME=$(basename "${PAD_GAME_DIR%/}")
+    GAME=${PAD_GAME_DIR_TITLE:-$(basename "${PAD_GAME_DIR%/}")}
     export PAD_GAME_DIR PAD_VID_ROOT="${PAD_GAME_DIR%/}"
 fi
 [ -z "$GAME" ] && { GAME=$(readlink "$ROOT/games/game" 2>/dev/null); GAME=${GAME%/game}; }
